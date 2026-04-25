@@ -1,5 +1,7 @@
 cmake-build-*/
 
+data/
+
 config.h
 
 data.csv

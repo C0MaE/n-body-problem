@@ -30,8 +30,8 @@ pip install pandas matplotlib numpy skyfield
 ## Build
 
 ```bash
-cmake -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug
 cmake --build cmake-build-debug
+cmake -B cmake-build-debug -DCMAKE_BUILD_TYPE=Debug
 ```
 
 `config.h` is generated automatically — do not edit it by hand.

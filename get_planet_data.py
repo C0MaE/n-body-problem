@@ -1,69 +1,139 @@
-from skyfield.api import load
-import csv
+from skyfield.api import Loader
+import json
+import os
 
-# Ephemeriden laden
-planets = load('de421.bsp')
+# ─── Ephemeris ────────────────────────────────────────────────────────────────
+
+print("Lade Ephemeriden-Daten...")
+
+load = Loader('./data')
+
+# Lade die verschiedenen Kernels einzeln
+kernels = [
+    load('de421.bsp'),   # Planeten + Erdmond + Pluto
+    load('jup365.bsp'),   # Jupitermonde
+    load('sat459.bsp'),   # Saturnmonde
+    load('mar099.bsp'),   # Marsmonde
+    load('ura111xl-799.bsp'), # Uranusmonde
+    load('nep105.bsp')    # Neptunmonde
+]
+
 ts = load.timescale()
 t = ts.now()
 
-sun = planets['sun']
+# Die Sonne ist im Haupt-Kernel de421 (Index 0)
+sun_state = kernels[0]['sun'].at(t)
 
-# Massen (kg)
-planet_mass = {
-    'sun': 1.9885e30,
-    'mercury': 3.3011e23,
-    'venus':   4.8675e24,
-    'earth':   5.97237e24,
-    'mars':    6.4171e23,
-    'jupiter barycenter': 1.8982e27,
-    'saturn barycenter':  5.6834e26,
-    'uranus barycenter':  8.6810e25,
-    'neptune barycenter': 1.02413e26,
+# ─── Body definitions ────────────────────────────────────────────────────────
+
+BODIES = {
+    'sun':                {'mass': 1.9885e30,  'radius': 6.9634e8},
+    'mercury':            {'mass': 3.3011e23,  'radius': 2.4397e6},
+    'venus':              {'mass': 4.8675e24,  'radius': 6.0518e6},
+    'earth':              {'mass': 5.9724e24,  'radius': 6.3710e6},
+    'moon':               {'mass': 7.342e22,   'radius': 1.7371e6},
+    'mars':               {'mass': 6.4171e23,  'radius': 3.3895e6},
+    'phobos':             {'mass': 1.0659e16,  'radius': 1.1260e4},
+    'deimos':             {'mass': 1.4762e15,  'radius': 6.2000e3},
+    'jupiter barycenter': {'mass': 1.8982e27,  'radius': 6.9911e7},
+    'io':                 {'mass': 8.9319e22,  'radius': 1.8216e6},
+    'europa':             {'mass': 4.7998e22,  'radius': 1.5608e6},
+    'ganymede':           {'mass': 1.4819e23,  'radius': 2.6341e6},
+    'callisto':           {'mass': 1.0759e23,  'radius': 2.4103e6},
+    'saturn barycenter':  {'mass': 5.6834e26,  'radius': 5.8232e7},
+    'mimas':              {'mass': 3.7493e19,  'radius': 1.9820e5},
+    'enceladus':          {'mass': 1.0802e20,  'radius': 2.5210e5},
+    'tethys':             {'mass': 6.1744e20,  'radius': 5.3110e5},
+    'dione':              {'mass': 1.0954e21,  'radius': 5.6140e5},
+    'rhea':               {'mass': 2.3065e21,  'radius': 7.6380e5},
+    'titan':              {'mass': 1.3452e23,  'radius': 2.5747e6},
+    'iapetus':            {'mass': 1.8056e21,  'radius': 7.3450e5},
+    'uranus barycenter':  {'mass': 8.6810e25,  'radius': 2.5362e7},
+    'ariel':              {'mass': 1.3530e21,  'radius': 5.7890e5},
+    'umbriel':            {'mass': 1.2750e21,  'radius': 5.8470e5},
+    'titania':            {'mass': 3.4000e21,  'radius': 7.8840e5},
+    'oberon':             {'mass': 3.0760e21,  'radius': 7.6140e5},
+    'miranda':            {'mass': 6.5900e19,  'radius': 2.3580e5},
+    'neptune barycenter': {'mass': 1.0241e26,  'radius': 2.4622e7},
+    'triton':             {'mass': 2.1390e22,  'radius': 1.3534e6},
+    'pluto barycenter':   {'mass': 1.3030e22,  'radius': 1.1880e6},
 }
 
-# Radien (km) – mittlere IAU-Werte
-planet_radius = {
-    'sun': 696340,
-    'mercury': 2439.7,
-    'venus': 6051.8,
-    'earth': 6371.0,
-    'mars': 3389.5,
-    'jupiter barycenter': 69911,
-    'saturn barycenter': 58232,
-    'uranus barycenter': 25362,
-    'neptune barycenter': 24622,
+CUSTOM_COLORS = {
+    'sun': '#FDB813', 'mercury': '#B5B5B5', 'venus': '#E8C07D', 'earth': '#4BA3C3', 
+    'moon': '#D3D3D3', 'mars': '#C1440E', 'jupiter barycenter': '#C88B3A', 
+    'saturn barycenter': '#E4D191', 'uranus barycenter': '#7DE8E8', 
+    'neptune barycenter': '#5B5DDF', 'pluto barycenter': '#E3DCCB',
+    'phobos': '#8A7A6B', 'deimos': '#A19485', 'io': '#E0C838', 'europa': '#A88D71', 
+    'ganymede': '#8C7C6D', 'callisto': '#635B51', 'mimas': '#D1E0E0', 
+    'enceladus': '#E6FFFF', 'tethys': '#C2D1D1', 'dione': '#A3B2B2', 
+    'rhea': '#8A9999', 'titan': '#F2A900', 'iapetus': '#5C4A3D',
+    'ariel': '#B3C2B3', 'umbriel': '#7A8A7A', 'titania': '#D1E0D1', 
+    'oberon': '#5C6B5C', 'miranda': '#94A394', 'triton': '#FFC2B3'
 }
 
-with open('planet_data.csv', 'w', newline='') as file:
-    writer = csv.writer(file)
+DEFAULT_VISUALS = {'color': '#FFFFFF', 'marker_size': 5, 'trail_width': 0.7, 'trail_alpha': 0.6}
+KM_TO_M = 1e3
 
-    writer.writerow([
-        'body',
-        'mass_kg',
-        'radius_km',
-        'x_km', 'y_km', 'z_km',
-        'vx_km_s', 'vy_km_s', 'vz_km_s'
-    ])
+# ─── Config Loading ──────────────────────────────────────────────────────────
 
-    for name, mass in planet_mass.items():
+config_file = 'config.json'
+if os.path.exists(config_file):
+    with open(config_file) as f:
+        config = json.load(f)
+else:
+    config = {"simulation": {"t_steps": 500000, "dt": 3600}, "bodies": []}
 
-        radius = planet_radius.get(name, 0.0)
+existing = {b['name']: b for b in config.get('bodies', [])}
 
-        if name == 'sun':
-            pos = [0.0, 0.0, 0.0]
-            vel = [0.0, 0.0, 0.0]
+# ─── Data Extraction ─────────────────────────────────────────────────────────
+
+updated = []
+
+for name, props in BODIES.items():
+    if name == 'sun':
+        r, v = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+    else:
+        body = None
+        # Suche in allen geladenen Dateien nach dem Namen
+        for k in kernels:
+            if name in k:
+                body = k[name]
+                break
+        
+        if body is None:
+            print(f"Warnung: {name} nicht gefunden.")
+            continue
+
+        state = body.at(t)
+        # Position und Geschwindigkeit relativ zur Sonne
+        rel_pos = (state.position.km - sun_state.position.km) * KM_TO_M
+        rel_vel = (state.velocity.km_per_s - sun_state.velocity.km_per_s) * KM_TO_M
+        r, v = rel_pos.tolist(), rel_vel.tolist()
+
+    # Visuals beibehalten oder neu setzen
+    prev = existing.get(name, {})
+    visuals = {k: prev[k] for k in ('color', 'marker_size', 'trail_width', 'trail_alpha') if k in prev}
+    
+    if not visuals:
+        visuals = DEFAULT_VISUALS.copy()
+        if name in CUSTOM_COLORS: visuals['color'] = CUSTOM_COLORS[name]
+        
+        if 'barycenter' in name and name != 'pluto barycenter':
+            visuals['marker_size'] = 7
+        elif name in ['mercury', 'venus', 'earth', 'mars']:
+            visuals['marker_size'] = 5
         else:
-            body = planets[name]
-            astrometric = sun.at(t).observe(body)
-            pos = astrometric.position.km
-            vel = astrometric.velocity.km_per_s
+            visuals.update({'marker_size': 2, 'trail_width': 0.3, 'trail_alpha': 0.4})
 
-        writer.writerow([
-            name,
-            mass,
-            radius,
-            pos[0], pos[1], pos[2],
-            vel[0], vel[1], vel[2]
-        ])
+    updated.append({
+        'name': name, 'mass': props['mass'], 'radius': props['radius'],
+        'r': r, 'v': v, **visuals
+    })
 
-print("Alle Planetendaten inkl. Radius wurden gespeichert.")
+config['bodies'] = updated
+
+with open(config_file, 'w') as f:
+    json.dump(config, f, indent=2)
+
+print(f"Erfolg! {len(updated)} Objekte in config.json geschrieben.")
