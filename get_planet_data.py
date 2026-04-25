@@ -2,26 +2,52 @@ from skyfield.api import Loader
 import json
 import os
 
+# ─── ANSI Colors ──────────────────────────────────────────────────────────────
+
+CLR_RESET  = "\033[0m"
+CLR_BOLD   = "\033[1m"
+CLR_CYAN   = "\033[36m"
+CLR_GREEN  = "\033[32m"
+CLR_YELLOW = "\033[33m"
+CLR_GRAY   = "\033[90m"
+
+_SEP = CLR_GRAY + "  " + "─" * 50 + CLR_RESET
+
+# ─── Header ───────────────────────────────────────────────────────────────────
+
+print()
+print(CLR_CYAN + CLR_BOLD + "  ╔════════════════════════════════════════════════╗" + CLR_RESET)
+print(CLR_CYAN + CLR_BOLD + "  ║         PLANET DATA FETCHER                    ║" + CLR_RESET)
+print(CLR_CYAN + CLR_BOLD + "  ╚════════════════════════════════════════════════╝" + CLR_RESET)
+print()
+
 # ─── Ephemeris ────────────────────────────────────────────────────────────────
 
-print("Lade Ephemeriden-Daten...")
+print(CLR_BOLD + "  Ephemeris" + CLR_RESET)
+print(_SEP)
 
 load = Loader('./data')
+ts   = load.timescale()
+t    = ts.now()
 
-# Lade die verschiedenen Kernels einzeln
-kernels = [
-    load('de421.bsp'),   # Planeten + Erdmond + Pluto
-    load('jup365.bsp'),   # Jupitermonde
-    load('sat459.bsp'),   # Saturnmonde
-    load('mar099.bsp'),   # Marsmonde
-    load('ura111xl-799.bsp'), # Uranusmonde
-    load('nep105.bsp')    # Neptunmonde
+_KERNELS = [
+    ('de421.bsp',        'planets + Moon + Pluto'),
+    ('jup365.bsp',       'Jupiter moons'),
+    ('sat459.bsp',       'Saturn moons'),
+    ('mar099.bsp',       'Mars moons'),
+    ('ura111xl-799.bsp', 'Uranus moons'),
+    ('nep105.bsp',       'Neptune moons'),
 ]
 
-ts = load.timescale()
-t = ts.now()
+kernels = []
+for _fname, _desc in _KERNELS:
+    print(f"  {CLR_CYAN}●{CLR_RESET}  {_fname:<22}  {CLR_GRAY}loading…{CLR_RESET}", end='', flush=True)
+    kernels.append(load(_fname))
+    print(f"\r  {CLR_CYAN}●{CLR_RESET}  {_fname:<22}  {CLR_GRAY}{_desc}{CLR_RESET}          ")
 
-# Die Sonne ist im Haupt-Kernel de421 (Index 0)
+print(_SEP)
+print(f"  {CLR_GREEN}{CLR_BOLD}{len(kernels)} kernels loaded\n{CLR_RESET}")
+
 sun_state = kernels[0]['sun'].at(t)
 
 # ─── Body definitions ────────────────────────────────────────────────────────
@@ -60,15 +86,15 @@ BODIES = {
 }
 
 CUSTOM_COLORS = {
-    'sun': '#FDB813', 'mercury': '#B5B5B5', 'venus': '#E8C07D', 'earth': '#4BA3C3', 
-    'moon': '#D3D3D3', 'mars': '#C1440E', 'jupiter barycenter': '#C88B3A', 
-    'saturn barycenter': '#E4D191', 'uranus barycenter': '#7DE8E8', 
+    'sun': '#FDB813', 'mercury': '#B5B5B5', 'venus': '#E8C07D', 'earth': '#4BA3C3',
+    'moon': '#D3D3D3', 'mars': '#C1440E', 'jupiter barycenter': '#C88B3A',
+    'saturn barycenter': '#E4D191', 'uranus barycenter': '#7DE8E8',
     'neptune barycenter': '#5B5DDF', 'pluto barycenter': '#E3DCCB',
-    'phobos': '#8A7A6B', 'deimos': '#A19485', 'io': '#E0C838', 'europa': '#A88D71', 
-    'ganymede': '#8C7C6D', 'callisto': '#635B51', 'mimas': '#D1E0E0', 
-    'enceladus': '#E6FFFF', 'tethys': '#C2D1D1', 'dione': '#A3B2B2', 
+    'phobos': '#8A7A6B', 'deimos': '#A19485', 'io': '#E0C838', 'europa': '#A88D71',
+    'ganymede': '#8C7C6D', 'callisto': '#635B51', 'mimas': '#D1E0E0',
+    'enceladus': '#E6FFFF', 'tethys': '#C2D1D1', 'dione': '#A3B2B2',
     'rhea': '#8A9999', 'titan': '#F2A900', 'iapetus': '#5C4A3D',
-    'ariel': '#B3C2B3', 'umbriel': '#7A8A7A', 'titania': '#D1E0D1', 
+    'ariel': '#B3C2B3', 'umbriel': '#7A8A7A', 'titania': '#D1E0D1',
     'oberon': '#5C6B5C', 'miranda': '#94A394', 'triton': '#FFC2B3'
 }
 
@@ -88,6 +114,9 @@ existing = {b['name']: b for b in config.get('bodies', [])}
 
 # ─── Data Extraction ─────────────────────────────────────────────────────────
 
+print(CLR_BOLD + "  Bodies" + CLR_RESET)
+print(_SEP)
+
 updated = []
 
 for name, props in BODIES.items():
@@ -95,30 +124,30 @@ for name, props in BODIES.items():
         r, v = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
     else:
         body = None
-        # Suche in allen geladenen Dateien nach dem Namen
         for k in kernels:
             if name in k:
                 body = k[name]
                 break
-        
+
         if body is None:
-            print(f"Warnung: {name} nicht gefunden.")
+            print(f"  {CLR_YELLOW}!{CLR_RESET}  {name:<28}  {CLR_GRAY}not found — skipped{CLR_RESET}")
             continue
 
-        state = body.at(t)
-        # Position und Geschwindigkeit relativ zur Sonne
-        rel_pos = (state.position.km - sun_state.position.km) * KM_TO_M
+        state   = body.at(t)
+        rel_pos = (state.position.km    - sun_state.position.km)    * KM_TO_M
         rel_vel = (state.velocity.km_per_s - sun_state.velocity.km_per_s) * KM_TO_M
-        r, v = rel_pos.tolist(), rel_vel.tolist()
+        r, v    = rel_pos.tolist(), rel_vel.tolist()
 
-    # Visuals beibehalten oder neu setzen
-    prev = existing.get(name, {})
+    print(f"  {CLR_CYAN}●{CLR_RESET}  {name:<28}  {CLR_GRAY}{props['mass']:.3e} kg{CLR_RESET}")
+
+    prev    = existing.get(name, {})
     visuals = {k: prev[k] for k in ('color', 'marker_size', 'trail_width', 'trail_alpha') if k in prev}
-    
+
     if not visuals:
         visuals = DEFAULT_VISUALS.copy()
-        if name in CUSTOM_COLORS: visuals['color'] = CUSTOM_COLORS[name]
-        
+        if name in CUSTOM_COLORS:
+            visuals['color'] = CUSTOM_COLORS[name]
+
         if 'barycenter' in name and name != 'pluto barycenter':
             visuals['marker_size'] = 7
         elif name in ['mercury', 'venus', 'earth', 'mars']:
@@ -131,9 +160,12 @@ for name, props in BODIES.items():
         'r': r, 'v': v, **visuals
     })
 
+print(_SEP)
+print(f"  {CLR_GREEN}{CLR_BOLD}{len(updated)} bodies loaded\n{CLR_RESET}")
+
 config['bodies'] = updated
 
 with open(config_file, 'w') as f:
     json.dump(config, f, indent=2)
 
-print(f"Erfolg! {len(updated)} Objekte in config.json geschrieben.")
+print(f"  {CLR_GREEN}{CLR_BOLD}✓  Done{CLR_RESET}  →  {CLR_CYAN}{config_file}\n{CLR_RESET}")

@@ -5,6 +5,16 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers 3d projection
 from matplotlib.animation import FuncAnimation
 
+# ─── ANSI Colors ──────────────────────────────────────────────────────────────
+
+CLR_RESET  = "\033[0m"
+CLR_BOLD   = "\033[1m"
+CLR_CYAN   = "\033[36m"
+CLR_GREEN  = "\033[32m"
+CLR_YELLOW = "\033[33m"
+CLR_GRAY   = "\033[90m"
+
+_SEP = CLR_GRAY + "  " + "─" * 50 + CLR_RESET
 
 # ─── Load body visual config ──────────────────────────────────────────────────
 
@@ -253,7 +263,33 @@ def make_update(objects, data_dict, sun_lookup, lines, points, ax, fig, state):
 def main():
     cfg = ANIMATION_CONFIG
     objects, data_dict, sun_lookup = load_data(cfg['data_file'])
-    n_steps = max(sun_lookup.keys())
+    n_steps    = max(sun_lookup.keys())
+    frame_step = max(1, min(cfg['frame_step'], n_steps // 500))
+    n_frames   = len(range(0, n_steps, frame_step))
+
+    print()
+    print(CLR_CYAN + CLR_BOLD + "  ╔════════════════════════════════════════════════╗" + CLR_RESET)
+    print(CLR_CYAN + CLR_BOLD + "  ║              N-BODY VISUALIZATION              ║" + CLR_RESET)
+    print(CLR_CYAN + CLR_BOLD + "  ╚════════════════════════════════════════════════╝" + CLR_RESET)
+    print()
+
+    body_preview = ', '.join(objects[:5]) + ('…' if len(objects) > 5 else '')
+    print(CLR_BOLD + "  Data" + CLR_RESET)
+    print(_SEP)
+    print(f"  {CLR_CYAN}●{CLR_RESET}  File      {CLR_YELLOW}{cfg['data_file']}{CLR_RESET}")
+    print(f"  {CLR_CYAN}●{CLR_RESET}  Objects   {CLR_YELLOW}{len(objects)}{CLR_RESET}  {CLR_GRAY}({body_preview}){CLR_RESET}")
+    print(f"  {CLR_CYAN}●{CLR_RESET}  Steps     {CLR_YELLOW}{n_steps}{CLR_RESET}")
+    print(_SEP)
+    print()
+
+    print(CLR_BOLD + "  Animation" + CLR_RESET)
+    print(_SEP)
+    print(f"  {CLR_CYAN}●{CLR_RESET}  Frame step   {CLR_YELLOW}{frame_step}{CLR_RESET}")
+    print(f"  {CLR_CYAN}●{CLR_RESET}  Frames       {CLR_YELLOW}{n_frames}{CLR_RESET}")
+    print(f"  {CLR_CYAN}●{CLR_RESET}  Interval     {CLR_YELLOW}{cfg['interval_ms']} ms{CLR_RESET}")
+    print(f"  {CLR_CYAN}●{CLR_RESET}  Initial view {CLR_YELLOW}± {cfg['initial_lim']:.2e} m{CLR_RESET}")
+    print(_SEP)
+    print(f"\n  {CLR_GREEN}{CLR_BOLD}✓  Launching visualization…{CLR_RESET}\n")
 
     fig, ax, lines, points = setup_plot(objects)
 
@@ -264,8 +300,6 @@ def main():
     on_press, on_release = make_click_handlers(ax, objects, points, state)
     fig.canvas.mpl_connect('button_press_event', on_press)
     fig.canvas.mpl_connect('button_release_event', on_release)
-
-    frame_step = max(1, min(cfg['frame_step'], n_steps // 500))
 
     update = make_update(objects, data_dict, sun_lookup, lines, points, ax, fig, state)
     ani = FuncAnimation(fig, update, frames=range(0, n_steps, frame_step),

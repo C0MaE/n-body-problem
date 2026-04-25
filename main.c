@@ -131,7 +131,7 @@ static void print_progress(int t, clock_t start) {
 int main(void) {
     printf("\n");
     printf(CLR_CYAN CLR_BOLD "  ╔════════════════════════════════════════════════╗\n" CLR_RESET);
-    printf(CLR_CYAN CLR_BOLD "  ║      N-BODY SOLAR SYSTEM SIMULATION           ║\n" CLR_RESET);
+    printf(CLR_CYAN CLR_BOLD "  ║         N-BODY SOLAR SYSTEM SIMULATION         ║\n" CLR_RESET);
     printf(CLR_CYAN CLR_BOLD "  ╚════════════════════════════════════════════════╝\n" CLR_RESET);
     printf("\n");
 
