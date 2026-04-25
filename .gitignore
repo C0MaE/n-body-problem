@@ -1,0 +1,13 @@
+cmake-build-*/
+
+config.h
+
+data.csv
+
+de421.bsp
+
+.venv/
+__pycache__/
+*.pyc
+
+.idea/
