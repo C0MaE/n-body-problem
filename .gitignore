@@ -8,6 +8,8 @@ data.csv
 
 de421.bsp
 
+visualization.html
+
 .venv/
 __pycache__/
 *.pyc
