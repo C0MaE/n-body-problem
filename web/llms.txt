@@ -1,0 +1,38 @@
+# Solar System N-Body Simulation
+
+> An interactive 3D web viewer for a Newtonian N-body simulation of the solar system. 17 bodies (the Sun, eight planets, Pluto and seven major moons) are integrated in C with the velocity Verlet method at a one-hour time step for 1,000,000 steps, about 114 years starting 2026-04-25. The viewer runs in any browser with WebGL and can export MP4 videos of the orbits.
+
+Live viewer: https://c0mae.github.io/n-body-problem/
+Source code: https://github.com/C0MaE/n-body-problem
+
+## What the simulation computes
+
+- Method: direct-summation N-body gravity (every body attracts every other body), integrated with velocity Verlet, a symplectic second-order integrator with good long-term energy behaviour.
+- Time step: dt = 3600 s (1 hour); 1,000,000 steps, about 114.08 years.
+- Gravitational constant: G = 6.673e-11 m³ kg⁻¹ s⁻².
+- Initial conditions: Sun-relative positions and velocities from NASA JPL ephemerides (DE421 for planets, Moon and Pluto; JPL satellite kernels for the moons of Mars and Jupiter), read with Skyfield.
+- Units in the simulation: SI (m, m/s, kg, s). The web viewer shows astronomical units (AU) and km.
+- Bodies: Sun; Mercury; Venus; Earth and Moon; Mars with Phobos and Deimos; Jupiter with Io, Europa, Ganymede and Callisto; Saturn; Uranus; Neptune; Pluto. Jupiter, Saturn, Uranus, Neptune and Pluto are represented by their system barycenters.
+- Limitations: point masses only, no general relativity (so Mercury's relativistic perihelion precession is not reproduced), no tides, no non-gravitational forces, no moons of Saturn, Uranus or Neptune.
+
+## What the web viewer shows
+
+- Positions relative to the Sun, rotated into the invariable plane of the solar system (total angular momentum along +z).
+- The run is downsampled to 15,874 frames, one every 63 hours. Phobos, Deimos, Io, Europa and Ganymede orbit faster than that, so their orbits are drawn as rings instead of animated.
+- Bodies are drawn at true scale; zooming in shows their spheres. Saturn's rings are oriented by its pole.
+- Features: follow any body, fading orbit trails, timeline from 6 hours to 10 years per second, AU grid, scale bar, Julian Date readout, PNG stills, and frame-exact MP4 video export (1080p, 4K, 9:16 portrait, square; 30 or 60 fps) using WebCodecs.
+- Deep links: append #earth, #moon, #mars, #jupiter, #saturn, #uranus, #neptune or #pluto to the viewer URL to start focused on that body.
+
+## How to run it yourself
+
+1. Build the C simulation with CMake (needs OpenBLAS and OpenMP) and run it; it writes data.csv.
+2. Run `python export_web.py` to pack data.csv into web/data.js.
+3. Serve the web/ folder (`python -m http.server --directory web`) and open it in a browser.
+
+## Files
+
+- [README](https://github.com/C0MaE/n-body-problem/blob/main/README.md): build, usage, configuration and units
+- [main.c](https://github.com/C0MaE/n-body-problem/blob/main/main.c): the integrator
+- [config.json](https://github.com/C0MaE/n-body-problem/blob/main/config.json): bodies, masses, radii and initial conditions
+- [export_web.py](https://github.com/C0MaE/n-body-problem/blob/main/export_web.py): downsampling, frame rotation and export for the viewer
+- [web/index.html](https://github.com/C0MaE/n-body-problem/blob/main/web/index.html): the Three.js viewer

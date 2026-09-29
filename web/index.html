@@ -3,9 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-</head>
-<body>
-<title>Solar System N-Body</title>
+<title>Solar System N-Body Simulation · Interactive 3D Orbits</title>
+<meta name="description" content="Interactive 3D solar system simulation: 114 years of planet and moon orbits computed with a velocity Verlet N-body integrator. Follow any body through time and export MP4 videos.">
+<link rel="canonical" href="https://c0mae.github.io/n-body-problem/">
+<link rel="alternate" type="text/markdown" title="Plain-text summary for AI assistants" href="llms.txt">
+<meta name="theme-color" content="#04060b">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2304060b'/%3E%3Cellipse cx='16' cy='16' rx='12' ry='5' fill='none' stroke='%237c93c4' stroke-width='1.4'/%3E%3Ccircle cx='16' cy='16' r='4.5' fill='%23f4b54f'/%3E%3Ccircle cx='27' cy='14.6' r='1.8' fill='%234BA3C3'/%3E%3C/svg%3E">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://c0mae.github.io/n-body-problem/">
+<meta property="og:title" content="The Solar System, in motion · N-Body Simulation">
+<meta property="og:description" content="Interactive 3D solar system simulation: 114 years of planet and moon orbits computed with a velocity Verlet N-body integrator. Follow any body through time and export MP4 videos.">
+<meta property="og:image" content="https://c0mae.github.io/n-body-problem/preview.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Orbits of the inner planets and Jupiter around the Sun, rendered by the N-body simulation">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Solar System N-Body Simulation",
+  "url": "https://c0mae.github.io/n-body-problem/",
+  "description": "Interactive 3D solar system simulation: 114 years of planet and moon orbits computed with a velocity Verlet N-body integrator. Follow any body through time and export MP4 videos.",
+  "image": "https://c0mae.github.io/n-body-problem/preview.jpg",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "Any (web browser with WebGL)",
+  "isAccessibleForFree": true,
+  "author": { "@type": "Person", "name": "C0MaE", "url": "https://github.com/C0MaE" },
+  "isBasedOn": "https://github.com/C0MaE/n-body-problem"
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
@@ -45,6 +72,7 @@ body.recording #overlay { visibility: hidden; }
   backdrop-filter: blur(14px) saturate(1.2);
   -webkit-backdrop-filter: blur(14px) saturate(1.2);
 }
+h1.eyebrow { margin: 0; }
 .eyebrow {
   font: 500 10.5px/1 var(--font-data);
   letter-spacing: 0.14em;
@@ -152,6 +180,12 @@ body.no-moons .body-row.moon { display: none; }
 .slider-row output { font: 11px var(--font-data); color: var(--mute); font-variant-numeric: tabular-nums; }
 .slider-row input { grid-column: 1 / -1; }
 .note { font-size: 11.5px; color: var(--mute); padding: 0 6px; line-height: 1.5; }
+.about summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; }
+.about summary::-webkit-details-marker { display: none; }
+.about summary::after { content: "+"; }
+.about[open] summary::after { content: "−"; }
+.about .note { margin: 0; }
+.note a { color: var(--ink); text-underline-offset: 2px; }
 .note code { font: 11px var(--font-data); color: var(--mute); }
 
 input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; margin: 0; cursor: pointer; }
@@ -229,13 +263,16 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
   .ui, .switch, .switch::after { transition: none; }
 }
 </style>
+</head>
+<body>
 
 <canvas id="gl"></canvas>
 <canvas id="overlay"></canvas>
 <div id="boot">Loading orbit data …</div>
+<noscript><p style="position:fixed;inset:auto 16px 50% 16px;text-align:center">This interactive solar system simulation needs JavaScript and WebGL.</p></noscript>
 
 <header id="readout" class="ui">
-  <div class="eyebrow">Solar System · N-Body Simulation</div>
+  <h1 class="eyebrow">Solar System · N-Body Simulation</h1>
   <div id="date">—</div>
   <div id="subclock">—</div>
   <div id="focusline"><i></i><span></span></div>
@@ -273,6 +310,12 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
     </div>
   </div>
   <p class="note" id="alias-note" hidden></p>
+  <details class="section about">
+    <summary class="eyebrow">About this simulation</summary>
+    <p class="note">The Sun, the eight planets, Pluto and seven major moons, integrated in C with the velocity Verlet method at a one-hour time step over 114 years. Initial positions and velocities come from NASA JPL ephemerides; everything after that is pure Newtonian gravity between all 17 bodies.</p>
+    <p class="note">Positions are shown relative to the Sun in the invariable plane of the solar system. Bodies are drawn at true scale; zoom in to see their spheres, or follow a planet to watch its moons.</p>
+    <p class="note"><a href="https://github.com/C0MaE/n-body-problem">Source code on GitHub</a></p>
+  </details>
   <p class="note">Drag to rotate, scroll to zoom, click a body to follow it. Keys: <code>Space</code> pause, <code>H</code> hide interface, <code>R</code> video.</p>
 </aside>
 
