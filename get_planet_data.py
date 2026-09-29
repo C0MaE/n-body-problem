@@ -164,6 +164,7 @@ print(_SEP)
 print(f"  {CLR_GREEN}{CLR_BOLD}{len(updated)} bodies loaded\n{CLR_RESET}")
 
 config['bodies'] = updated
+config.setdefault('simulation', {})['epoch'] = t.utc_iso()  # start date, shown by the web viewer
 
 with open(config_file, 'w') as f:
     json.dump(config, f, indent=2)

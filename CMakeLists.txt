@@ -7,7 +7,13 @@ find_package(OpenMP REQUIRED)
 find_package(BLAS REQUIRED)
 find_package(Python3 REQUIRED)
 
-# Regenerate config.h from bodies.json before every build.
+# Generate config.h once at configure time so a fresh checkout can configure,
+# then regenerate it from config.json before every build.
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/generate_config.py
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
 add_custom_target(generate_config
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/generate_config.py
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}

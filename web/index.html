@@ -1,0 +1,1297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+</head>
+<body>
+<title>Solar System N-Body</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+/* Layout: full-bleed WebGL sky; instrument readouts pinned to the corners, a timeline strip at the bottom, a layer panel on the right. */
+:root {
+  --void:   #04060b;
+  --glass:  rgba(9, 13, 21, 0.74);
+  --line:   rgba(150, 170, 210, 0.16);
+  --ink:    #e3e8f2;
+  --mute:   #8089a0;
+  --faint:  #4a5368;
+  --sun:    #f4b54f;
+  --rec:    #ff5a4e;
+  --font-display: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --font-body:    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 10px;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; background: var(--void); color: var(--ink); overflow: hidden; }
+body { font: 13px/1.45 var(--font-body); -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 1.5px solid var(--sun); outline-offset: 2px; }
+
+#gl, #overlay { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#gl { object-fit: contain; background: var(--void); }
+#overlay { pointer-events: none; }
+body.recording #overlay { visibility: hidden; }
+
+.glass {
+  background: var(--glass);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+}
+.eyebrow {
+  font: 500 10.5px/1 var(--font-data);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.ui { transition: opacity .35s ease; }
+body.ui-hidden .ui { opacity: 0; pointer-events: none; }
+
+/* ── Readout (top left) ─────────────────────────────── */
+#readout {
+  position: fixed;
+  top: calc(20px + env(safe-area-inset-top, 0px));
+  left: 22px;
+  display: grid;
+  gap: 6px;
+  pointer-events: none;
+  text-shadow: 0 1px 12px rgba(0,0,0,.8);
+}
+#date {
+  font: 400 clamp(30px, 4.4vw, 50px)/1 var(--font-display);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  text-wrap: balance;
+}
+#date em { font-style: italic; color: var(--sun); }
+#subclock { font: 12px/1.3 var(--font-data); color: var(--mute); font-variant-numeric: tabular-nums; }
+#focusline { font: 12px/1.3 var(--font-data); color: var(--ink); display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+#focusline i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+/* ── Actions (top right) ────────────────────────────── */
+#actions {
+  position: fixed;
+  top: calc(18px + env(safe-area-inset-top, 0px));
+  right: 18px;
+  display: flex;
+  gap: 8px;
+}
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 34px; padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.btn:hover { border-color: rgba(200,210,235,.35); }
+.btn.primary { background: var(--ink); color: var(--void); border-color: var(--ink); }
+.btn.primary:hover { background: #fff; }
+.btn .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--rec); box-shadow: 0 0 10px var(--rec); }
+.btn.icon { width: 34px; padding: 0; justify-content: center; }
+.btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+
+/* ── Layer panel (right) ────────────────────────────── */
+#panel {
+  position: fixed;
+  top: calc(64px + env(safe-area-inset-top, 0px));
+  right: 18px;
+  width: 256px;
+  max-height: calc(100% - 64px - 110px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow: auto;
+  padding: 14px 12px 12px;
+  display: grid;
+  gap: 16px;
+  scrollbar-width: thin;
+}
+#panel[hidden] { display: none; }
+.section { display: grid; gap: 8px; }
+.section > .eyebrow { padding: 0 6px; }
+#bodies { display: grid; gap: 1px; }
+.body-row {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.body-row:hover { background: rgba(160,180,220,.08); }
+.body-row[aria-pressed="true"] { background: rgba(244,181,79,.12); }
+.body-row[aria-pressed="true"] .name { color: var(--sun); }
+.body-row.moon { padding-left: 26px; grid-template-columns: 8px 1fr auto; }
+.body-row.moon .name { color: var(--mute); }
+.body-row .swatch { width: 10px; height: 10px; border-radius: 50%; }
+.body-row.moon .swatch { width: 6px; height: 6px; }
+.body-row .meta { font: 11px var(--font-data); color: var(--faint); font-variant-numeric: tabular-nums; }
+.body-row.ringonly .meta::after { content: " ◌"; }
+body.no-moons .body-row.moon { display: none; }
+
+.toggle { display: flex; justify-content: space-between; align-items: center; padding: 3px 6px; gap: 12px; cursor: pointer; }
+.toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.switch { width: 28px; height: 16px; border-radius: 999px; background: #252c3b; position: relative; transition: background .2s; flex: none; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--mute); transition: transform .2s, background .2s; }
+.toggle input:checked + .switch { background: rgba(244,181,79,.35); }
+.toggle input:checked + .switch::after { transform: translateX(12px); background: var(--sun); }
+.toggle input:focus-visible + .switch { outline: 1.5px solid var(--sun); outline-offset: 2px; }
+
+.slider-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 3px 6px; align-items: center; }
+.slider-row output { font: 11px var(--font-data); color: var(--mute); font-variant-numeric: tabular-nums; }
+.slider-row input { grid-column: 1 / -1; }
+.note { font-size: 11.5px; color: var(--mute); padding: 0 6px; line-height: 1.5; }
+.note code { font: 11px var(--font-data); color: var(--mute); }
+
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; background: transparent; margin: 0; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 2px; background: var(--line); border-radius: 2px; }
+input[type=range]::-moz-range-track { height: 2px; background: var(--line); border-radius: 2px; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; border-radius: 50%; background: var(--ink); border: 0; }
+input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 0; }
+
+/* ── Timeline (bottom) ──────────────────────────────── */
+#timeline {
+  position: fixed;
+  left: 18px; right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px 10px 10px;
+}
+#play { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--ink); color: var(--void); display: grid; place-items: center; }
+#play svg { width: 16px; height: 16px; fill: currentColor; }
+#scrub-wrap { position: relative; padding-bottom: 14px; min-width: 0; }
+#scrub { position: relative; z-index: 1; }
+#scrub::-webkit-slider-runnable-track { background: linear-gradient(to right, var(--sun) var(--p, 0%), var(--line) var(--p, 0%)); }
+#scrub::-moz-range-progress { height: 2px; background: var(--sun); }
+#ticks { position: absolute; left: 6px; right: 6px; bottom: 0; height: 12px; font: 10px/1 var(--font-data); color: var(--faint); }
+#ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+#ticks span::before { content: ""; position: absolute; left: 50%; top: -8px; height: 4px; width: 1px; background: var(--faint); }
+#speed { display: grid; grid-template-columns: 26px 92px 26px; align-items: center; gap: 2px; text-align: center; }
+#speed button { height: 26px; border-radius: 6px; border: 1px solid var(--line); background: transparent; font: 14px/1 var(--font-data); }
+#speed button:hover { border-color: rgba(200,210,235,.35); }
+#speed-val { font: 12px/1.1 var(--font-data); font-variant-numeric: tabular-nums; }
+#speed-val small { display: block; font-size: 9.5px; color: var(--faint); letter-spacing: .1em; text-transform: uppercase; margin-top: 2px; }
+
+/* ── Dialog ─────────────────────────────────────────── */
+#scrim { position: fixed; inset: 0; background: rgba(2,3,6,.55); display: grid; place-items: center; padding: 16px; z-index: 10; }
+#scrim[hidden] { display: none; }
+.dialog { width: min(440px, 100%); max-height: 100%; overflow: auto; padding: 22px 22px 18px; display: grid; gap: 18px; background: rgba(10,14,22,.94); }
+.dialog h2 { margin: 0; font: 400 30px/1.05 var(--font-display); text-wrap: balance; }
+.dialog h2 em { color: var(--sun); }
+.dialog p { margin: 0; color: var(--mute); }
+.field { display: grid; gap: 8px; }
+.seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 6px; }
+.seg label { position: relative; }
+.seg input { position: absolute; opacity: 0; }
+.seg span { display: grid; gap: 1px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); cursor: pointer; font-weight: 500; }
+.seg span small { font: 10.5px var(--font-data); color: var(--faint); font-weight: 400; }
+.seg input:checked + span { border-color: var(--sun); background: rgba(244,181,79,.08); }
+.seg input:focus-visible + span { outline: 1.5px solid var(--sun); outline-offset: 2px; }
+.dur { display: grid; grid-template-columns: 1fr 64px; gap: 12px; align-items: center; }
+.dur input[type=number] { background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: 13px var(--font-data); width: 100%; box-sizing: border-box; }
+.summary { font: 12px/1.5 var(--font-data); color: var(--mute); padding: 10px 12px; border-radius: 8px; background: rgba(160,180,220,.06); font-variant-numeric: tabular-nums; }
+.row-end { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.progress { height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--rec); transition: width .15s linear; }
+.error { color: #ff9a8f; }
+
+#toast { position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); padding: 8px 14px; font-size: 12.5px; z-index: 11; }
+#toast[hidden] { display: none; }
+
+#boot { position: fixed; inset: 0; display: grid; place-items: center; font: 12px var(--font-data); color: var(--mute); letter-spacing: .12em; text-transform: uppercase; }
+#boot[hidden] { display: none; }
+
+@media (max-width: 720px) {
+  #panel { left: 16px; right: 16px; width: auto; top: auto; bottom: calc(136px + env(safe-area-inset-bottom, 0px)); max-height: 46%; }
+  #readout { left: 16px; }
+  #readout .eyebrow { display: none; }
+  #actions { right: 16px; }
+  #actions .label { display: none; }
+  #actions .btn:not(.icon) { padding: 0 11px; }
+  #timeline { left: 16px; right: 16px; gap: 10px; grid-template-columns: auto 1fr; }
+  #speed { grid-column: 1 / -1; justify-self: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui, .switch, .switch::after { transition: none; }
+}
+</style>
+
+<canvas id="gl"></canvas>
+<canvas id="overlay"></canvas>
+<div id="boot">Loading orbit data …</div>
+
+<header id="readout" class="ui">
+  <div class="eyebrow">Solar System · N-Body Simulation</div>
+  <div id="date">—</div>
+  <div id="subclock">—</div>
+  <div id="focusline"><i></i><span></span></div>
+</header>
+
+<nav id="actions" class="ui">
+  <button class="btn primary" id="rec-open" type="button" title="Record video (R)"><span class="dot"></span><span class="label">Video</span></button>
+  <button class="btn" id="shot" type="button" title="Save still image as PNG"><svg viewBox="0 0 16 16"><rect x="1.5" y="3.5" width="13" height="10" rx="2"/><circle cx="8" cy="8.5" r="2.6"/><path d="M5.5 3.5l1-2h3l1 2"/></svg><span class="label">Image</span></button>
+  <button class="btn icon" id="panel-toggle" type="button" title="Show or hide layers" aria-expanded="true" aria-controls="panel"><svg viewBox="0 0 16 16"><path d="M8 1.8 1.5 5 8 8.2 14.5 5z"/><path d="M1.5 8 8 11.2 14.5 8"/><path d="M1.5 11 8 14.2 14.5 11"/></svg></button>
+</nav>
+
+<aside id="panel" class="glass ui">
+  <div class="section">
+    <div class="eyebrow">Focus</div>
+    <div id="bodies"></div>
+  </div>
+  <div class="section">
+    <div class="eyebrow">Display</div>
+    <label class="toggle"><span>Orbit trails</span><input type="checkbox" id="opt-trails" checked><i class="switch"></i></label>
+    <label class="toggle"><span>Moons</span><input type="checkbox" id="opt-moons" checked><i class="switch"></i></label>
+    <label class="toggle"><span>Labels</span><input type="checkbox" id="opt-labels" checked><i class="switch"></i></label>
+    <label class="toggle"><span>AU grid</span><input type="checkbox" id="opt-grid" checked><i class="switch"></i></label>
+    <label class="toggle"><span>Orbit camera</span><input type="checkbox" id="opt-orbit"><i class="switch"></i></label>
+    <div class="slider-row">
+      <label for="opt-trail-len">Trail length</label><output id="trail-len-val">1.0 orbits</output>
+      <input type="range" id="opt-trail-len" min="0.05" max="3" step="0.05" value="1">
+    </div>
+    <div class="slider-row">
+      <label for="opt-trail-bright">Trail brightness</label><output id="trail-bright-val">70 %</output>
+      <input type="range" id="opt-trail-bright" min="0.1" max="1.6" step="0.05" value="0.7">
+    </div>
+    <div class="slider-row">
+      <label for="opt-glow">Glow</label><output id="glow-val">70 %</output>
+      <input type="range" id="opt-glow" min="0" max="2" step="0.05" value="0.7">
+    </div>
+  </div>
+  <p class="note" id="alias-note" hidden></p>
+  <p class="note">Drag to rotate, scroll to zoom, click a body to follow it. Keys: <code>Space</code> pause, <code>H</code> hide interface, <code>R</code> video.</p>
+</aside>
+
+<footer id="timeline" class="glass ui">
+  <button id="play" type="button" aria-label="Play"><svg viewBox="0 0 16 16"><path id="play-icon" d="M4 2.5v11l9.5-5.5z"/></svg></button>
+  <div id="scrub-wrap">
+    <input type="range" id="scrub" min="0" max="1" step="any" value="0" aria-label="Time">
+    <div id="ticks"></div>
+  </div>
+  <div id="speed">
+    <button type="button" id="slower" aria-label="Slower">−</button>
+    <div id="speed-val">—</div>
+    <button type="button" id="faster" aria-label="Faster">+</button>
+  </div>
+</footer>
+
+<div id="scrim" hidden>
+  <form class="dialog glass" id="rec-form" novalidate>
+    <div class="eyebrow">Video export · MP4</div>
+    <h2>Record <em>the orbits</em></h2>
+    <p>The video is rendered frame by frame at a fixed resolution, so it stays smooth however fast your computer is. Camera, focus and speed come from the current view.</p>
+    <div class="field">
+      <div class="eyebrow">Format</div>
+      <div class="seg">
+        <label><input type="radio" name="fmt" id="fmt-1080" value="1920x1080" checked><span>Full HD<small>1920 × 1080</small></span></label>
+        <label><input type="radio" name="fmt" id="fmt-4k" value="3840x2160"><span>4K<small>3840 × 2160</small></span></label>
+        <label><input type="radio" name="fmt" id="fmt-v" value="1080x1920"><span>Portrait<small>1080 × 1920</small></span></label>
+        <label><input type="radio" name="fmt" id="fmt-sq" value="1080x1080"><span>Square<small>1080 × 1080</small></span></label>
+      </div>
+    </div>
+    <div class="field">
+      <div class="eyebrow">Frame rate</div>
+      <div class="seg">
+        <label><input type="radio" name="fps" id="fps-30" value="30"><span>30 fps</span></label>
+        <label><input type="radio" name="fps" id="fps-60" value="60" checked><span>60 fps</span></label>
+      </div>
+    </div>
+    <div class="field">
+      <label class="eyebrow" for="dur">Length in seconds</label>
+      <div class="dur">
+        <input type="range" id="dur-range" min="5" max="120" step="1" value="20" aria-label="Length">
+        <input type="number" id="dur" min="1" max="600" value="20">
+      </div>
+    </div>
+    <div class="field">
+      <label class="toggle"><span>Orbit the camera</span><input type="checkbox" id="rec-orbit" checked><i class="switch"></i></label>
+      <label class="toggle"><span>Show date, labels and scale</span><input type="checkbox" id="rec-hud" checked><i class="switch"></i></label>
+    </div>
+    <div class="summary" id="rec-summary">—</div>
+    <p class="error" id="rec-error" hidden></p>
+    <div class="row-end">
+      <button class="btn" type="button" id="rec-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="rec-start"><span class="dot"></span>Start recording</button>
+    </div>
+  </form>
+
+  <div class="dialog glass" id="rec-progress" hidden>
+    <div class="eyebrow" id="rec-phase">Recording</div>
+    <h2 id="rec-title">Rendering frames …</h2>
+    <div class="progress"><i id="rec-bar"></i></div>
+    <div class="summary" id="rec-stats">—</div>
+    <div class="row-end">
+      <button class="btn" type="button" id="rec-abort">Cancel</button>
+      <button class="btn primary" type="button" id="rec-save" hidden>Save video</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="glass" role="status" hidden></div>
+
+<script src="data.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+
+const $ = (id) => document.getElementById(id);
+const D = window.NBODY_DATA;
+if (!D) {
+  $('boot').textContent = 'data.js is missing. Run python export_web.py first.';
+  throw new Error('NBODY_DATA missing');
+}
+
+// ─── Data ────────────────────────────────────────────────────────────────────
+
+const AU_KM = 149597870.7;
+const DAY = 86400;
+const N = D.bodies.length;
+const F = D.frames;
+const P = (() => {
+  const bin = atob(D.positions);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Float32Array(bytes.buffer);
+})();
+
+const SUN = D.bodies.findIndex((b) => b.parent < 0);
+
+const bodies = D.bodies.map((b, i) => {
+  const isSun = i === SUN;
+  const isMoon = !isSun && b.parent !== SUN;
+  return {
+    ...b, i, isSun, isMoon,
+    slug: b.name.split(' ')[0],
+    col: new THREE.Color(b.color),
+    ringOnly: !!b.ring,
+    moons: [],
+    cur: new Float64Array(3),
+    rel: new THREE.Vector3(),
+    screen: { x: 0, y: 0, vis: false, alpha: 0, r: 0 },
+  };
+});
+for (const b of bodies) if (b.isMoon) bodies[b.parent].moons.push(b.i);
+
+function sample(k, i, o, off = 0) {
+  const j = (k * N + i) * 3;
+  o[off] = P[j]; o[off + 1] = P[j + 1]; o[off + 2] = P[j + 2];
+}
+const tmp4 = new Float64Array(12);
+function posAt(i, f, o) {
+  f = Math.min(Math.max(f, 0), F - 1);
+  if (bodies[i].ringOnly) { sample(Math.round(f), i, o); return o; }
+  const k = Math.floor(f), t = f - k;
+  sample(Math.max(k - 1, 0), i, tmp4, 0);
+  sample(k, i, tmp4, 3);
+  sample(Math.min(k + 1, F - 1), i, tmp4, 6);
+  sample(Math.min(k + 2, F - 1), i, tmp4, 9);
+  const t2 = t * t, t3 = t2 * t;
+  for (let d = 0; d < 3; d++) {           // Catmull-Rom through the four nearest samples
+    const p0 = tmp4[d], p1 = tmp4[3 + d], p2 = tmp4[6 + d], p3 = tmp4[9 + d];
+    o[d] = 0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (3 * p1 - p0 - 3 * p2 + p3) * t3);
+  }
+  return o;
+}
+
+// Extent of each body's moon system, for picking a good camera distance.
+{
+  const a = new Float64Array(3), p = new Float64Array(3);
+  for (const b of bodies) {
+    b.system = 0;
+    for (const m of b.moons) {
+      sample(0, m, a); sample(0, b.i, p);
+      b.system = Math.max(b.system, Math.hypot(a[0] - p[0], a[1] - p[1], a[2] - p[2]));
+    }
+  }
+  let far = 0;
+  for (const b of bodies) if (!b.isSun && !b.isMoon) { sample(0, b.i, a); far = Math.max(far, Math.hypot(a[0], a[1], a[2])); }
+  bodies[SUN].system = far;
+}
+
+// ─── Time formatting ─────────────────────────────────────────────────────────
+
+const epochMs = D.epoch ? Date.parse(D.epoch) : NaN;
+const hasEpoch = Number.isFinite(epochMs);
+const nf1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const nf2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nf0 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function simSeconds(f) { return D.startT + f * D.frameDt; }
+function clock(f) {
+  const s = simSeconds(f);
+  const years = s / (365.25 * DAY);
+  if (hasEpoch) {
+    const d = new Date(epochMs + s * 1000);
+    const jd = d.getTime() / 864e5 + 2440587.5;
+    return {
+      dateHtml: `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, <em>${d.getUTCFullYear()}</em>`,
+      dateText: `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`,
+      year: d.getUTCFullYear(),
+      sub: `JD ${nf1.format(jd)}  ·  T + ${nf2.format(years)} yr`,
+    };
+  }
+  return {
+    dateHtml: `T + <em>${nf2.format(years)}</em> years`,
+    dateText: `T + ${nf2.format(years)} years`,
+    sub: `Day ${nf0.format(s / DAY)}  ·  Δt ${nf0.format(D.dt / 60)} min`,
+  };
+}
+function fmtPeriod(frames) {
+  const d = frames * D.frameDt / DAY;
+  if (!d) return '';
+  if (d < 1) return `${nf0.format(d * 24)} h`;
+  if (d < 800) return `${nf0.format(d)} d`;
+  return `${nf1.format(d / 365.25)} yr`;
+}
+function fmtDistance(au) {
+  if (au >= 0.1) return `${au >= 10 ? nf0.format(au) : nf1.format(au).replace('.0', '')} AU`;
+  const km = Math.round(au * AU_KM);
+  return km >= 1e6 ? `${nf1.format(km / 1e6).replace('.0', '')} million km` : `${nf0.format(km)} km`;
+}
+
+// ─── Renderer & scene ────────────────────────────────────────────────────────
+
+const canvas = $('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, preserveDrawingBuffer: true });
+renderer.setClearColor(0x000000, 1);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04060b);   // clear colour gets encoded twice by the composer; a background does not
+const camera = new THREE.PerspectiveCamera(42, 1, 1e-9, 1e7);
+camera.position.set(0, -11, 7.5);
+camera.up.set(0, 0, 1);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.enablePan = false;
+controls.zoomSpeed = 1.1;
+controls.rotateSpeed = 0.6;
+controls.maxDistance = 600;
+controls.autoRotateSpeed = 0.5;
+
+// Trails live in their own scene, drawn after the bloom pass, so only the Sun and bodies glow.
+const trailScene = new THREE.Scene();
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.45, 0.5);
+composer.addPass(bloom);
+const trailPass = new RenderPass(trailScene, camera);
+trailPass.clear = false;
+composer.addPass(trailPass);
+composer.addPass(new OutputPass());
+
+scene.add(new THREE.AmbientLight(0x8090b0, 0.06));
+const sunLight = new THREE.PointLight(0xfff1dc, 3.2, 0, 0);
+scene.add(sunLight);
+
+// Stars: a camera-centred sphere, denser along a tilted band for a hint of the Milky Way.
+const stars = (() => {
+  const n = 7000, pos = new Float32Array(n * 3), col = new Float32Array(n * 3), size = new Float32Array(n);
+  const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(1.05, 0.3, 0));
+  const v = new THREE.Vector3(), c = new THREE.Color();
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < n; i++) {
+    const band = i < n * 0.45;
+    const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2;
+    const z = band ? (rnd() - 0.5) * 0.28 * (rnd() + 0.2) : u;
+    const r = Math.sqrt(1 - z * z);
+    v.set(r * Math.cos(th), r * Math.sin(th), z);
+    if (band) v.applyQuaternion(tilt);
+    v.multiplyScalar(5e4).toArray(pos, i * 3);
+    const temp = rnd();
+    c.setHSL(temp < 0.7 ? 0.6 : 0.09, temp < 0.7 ? 0.25 : 0.45, 0.8);
+    const b = Math.pow(rnd(), 3.2) * (band ? 0.7 : 1);
+    c.multiplyScalar(0.25 + b * 1.1).toArray(col, i * 3);
+    size[i] = 0.8 + b * 2.2;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('size', new THREE.BufferAttribute(size, 1));
+  const m = new THREE.ShaderMaterial({
+    uniforms: { scale: { value: 1 } },
+    vertexShader: `
+      attribute float size; varying vec3 vColor; uniform float scale;
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+      void main() { vColor = color; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = size * scale;
+      #include <logdepthbuf_vertex>
+      }`,
+    fragmentShader: `
+      varying vec3 vColor;
+      #include <logdepthbuf_pars_fragment>
+      void main() { float d = length(gl_PointCoord - 0.5) * 2.0; float a = smoothstep(1.0, 0.0, d); gl_FragColor = vec4(vColor * a, 1.0);
+      #include <logdepthbuf_fragment>
+      }`,
+    vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
+  });
+  const p = new THREE.Points(g, m);
+  p.frustumCulled = false;
+  p.renderOrder = -10;
+  scene.add(p);
+  return p;
+})();
+
+// Grid: circles in the invariable plane, centred on the Sun.
+const GRID_R = [1, 2, 5, 10, 20, 30, 40, 50];
+const grid = (() => {
+  const g = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: 0x7c93c4, transparent: true, opacity: 0.1, depthWrite: false });
+  for (const r of GRID_R) {
+    const pts = [];
+    for (let k = 0; k <= 256; k++) { const a = k / 256 * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 0)); }
+    g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+  }
+  const spokes = [];
+  for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; spokes.push(new THREE.Vector3(Math.cos(a), Math.sin(a), 0), new THREE.Vector3(Math.cos(a) * 50, Math.sin(a) * 50, 0)); }
+  g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(spokes), mat.clone()));
+  g.children.at(-1).material.opacity = 0.05;
+  scene.add(g);
+  return g;
+})();
+
+// Spheres at true scale (visible once you zoom in far enough).
+const sphereGeo = new THREE.SphereGeometry(1, 64, 32);
+for (const b of bodies) {
+  const mat = b.isSun
+    ? new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd79a).multiplyScalar(1.6) })
+    : new THREE.MeshStandardMaterial({ color: b.col, roughness: 0.95, metalness: 0 });
+  b.mesh = new THREE.Mesh(sphereGeo, mat);
+  b.mesh.scale.setScalar(Math.max(b.radius, 1e-9));
+  scene.add(b.mesh);
+}
+
+// Saturn's rings, oriented by its pole.
+for (const b of bodies.filter((b) => b.pole)) {
+  const inner = 1.24, outer = 2.27;
+  const geo = new THREE.RingGeometry(inner, outer, 256, 1);
+  const uv = geo.attributes.uv, p = geo.attributes.position;
+  for (let k = 0; k < uv.count; k++) uv.setXY(k, (Math.hypot(p.getX(k), p.getY(k)) - inner) / (outer - inner), 0.5);
+  const tex = (() => {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 1;
+    const x = c.getContext('2d');
+    for (let k = 0; k < 512; k++) {
+      const r = k / 511;
+      let a = 0.25 + 0.55 * Math.pow(Math.sin(r * 38) * 0.5 + 0.5, 3) * (r > 0.42 ? 1 : 0.45);
+      if (r > 0.62 && r < 0.67) a *= 0.08;                     // Cassini division
+      if (r < 0.12) a *= r / 0.12;
+      x.fillStyle = `rgba(230,214,170,${a.toFixed(3)})`; x.fillRect(k, 0, 1, 1);
+    }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  const ring = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(...b.pole));
+  b.mesh.add(ring);
+}
+
+// Glowing dots: one point per body, screen-sized, fading out as the true sphere grows.
+const dots = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+  g.setAttribute('size', new THREE.BufferAttribute(new Float32Array(N), 1).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array(N), 1).setUsage(THREE.DynamicDrawUsage));
+  for (const b of bodies) {
+    const c = b.isSun ? new THREE.Color(0xffc56b).multiplyScalar(1.4) : b.col.clone().lerp(new THREE.Color(0xffffff), 0.25);
+    c.toArray(g.attributes.color.array, b.i * 3);
+  }
+  const m = new THREE.ShaderMaterial({
+    vertexShader: `
+      attribute float size; attribute float alpha; varying vec3 vColor; varying float vAlpha;
+      #include <common>
+      #include <logdepthbuf_pars_vertex>
+      void main() { vColor = color; vAlpha = alpha; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; gl_PointSize = size;
+      #include <logdepthbuf_vertex>
+      }`,
+    fragmentShader: `
+      varying vec3 vColor; varying float vAlpha;
+      #include <logdepthbuf_pars_fragment>
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        float core = smoothstep(0.34, 0.22, d);
+        float halo = exp(-d * d * 7.0) * 0.55;
+        float a = (core + halo) * vAlpha;
+        if (a < 0.003) discard;
+        gl_FragColor = vec4(mix(vColor, vec3(1.0), core * 0.35) * a * (1.0 + core * 0.45), 1.0);   // hot core crosses the bloom threshold
+        #include <logdepthbuf_fragment>
+      }`,
+    vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
+  });
+  const p = new THREE.Points(g, m);
+  p.frustumCulled = false;
+  p.renderOrder = 5;
+  scene.add(p);
+  return p;
+})();
+
+// Trails: fat lines whose vertex colour fades to black; additive blending turns that into a fade to transparent.
+const trailMats = [2.0, 1.1].map((w) => new LineMaterial({ linewidth: w, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+const TRAIL_MAX = { planet: 1600, moon: 500 };
+function makeLine(maxSeg, mat) {
+  const geo = new LineSegmentsGeometry();
+  const pb = new THREE.InstancedInterleavedBuffer(new Float32Array(maxSeg * 6), 6, 1).setUsage(THREE.DynamicDrawUsage);
+  const cb = new THREE.InstancedInterleavedBuffer(new Float32Array(maxSeg * 6), 6, 1).setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('instanceStart', new THREE.InterleavedBufferAttribute(pb, 3, 0));
+  geo.setAttribute('instanceEnd', new THREE.InterleavedBufferAttribute(pb, 3, 3));
+  geo.setAttribute('instanceColorStart', new THREE.InterleavedBufferAttribute(cb, 3, 0));
+  geo.setAttribute('instanceColorEnd', new THREE.InterleavedBufferAttribute(cb, 3, 3));
+  geo.instanceCount = 0;
+  const line = new LineSegments2(geo, mat);
+  line.frustumCulled = false;
+  line.userData = { pos: pb.array, col: cb.array, pb, cb, max: maxSeg };
+  trailScene.add(line);
+  return line;
+}
+for (const b of bodies) {
+  if (b.isSun) continue;
+  b.trail = makeLine(b.isMoon ? TRAIL_MAX.moon : TRAIL_MAX.planet, trailMats[b.isMoon ? 1 : 0]);
+  if (b.ring) {
+    // Orbit ring for moons that circle their planet faster than the export's frame rate can show.
+    const n = new THREE.Vector3(...b.ring.n), u = new THREE.Vector3(1, 0, 0).cross(n).normalize(), w = n.clone().cross(u);
+    b.ringLine = makeLine(128, trailMats[1]);
+    const d = b.ringLine.userData;
+    const c = b.col.clone().multiplyScalar(0.28);
+    for (let k = 0; k < 128; k++) {
+      const a0 = k / 128 * Math.PI * 2, a1 = (k + 1) / 128 * Math.PI * 2;
+      const p0 = u.clone().multiplyScalar(Math.cos(a0) * b.ring.r).addScaledVector(w, Math.sin(a0) * b.ring.r);
+      const p1 = u.clone().multiplyScalar(Math.cos(a1) * b.ring.r).addScaledVector(w, Math.sin(a1) * b.ring.r);
+      p0.toArray(d.pos, k * 6); p1.toArray(d.pos, k * 6 + 3);
+      c.toArray(d.col, k * 6); c.toArray(d.col, k * 6 + 3);
+    }
+    b.ringLine.geometry.instanceCount = 128;
+    d.pb.needsUpdate = true; d.cb.needsUpdate = true;
+  }
+}
+
+// ─── State ───────────────────────────────────────────────────────────────────
+
+const SPEEDS = [0.25, 1, 3, 10, 30, 90, 182.625, 365.25, 730.5, 1826.25, 3652.5];   // simulated days per second
+const state = {
+  f: 0,
+  playing: true,
+  speedIdx: 5,
+  trails: true, moons: true, labels: true, grid: true, orbit: false,
+  trailLen: 1,
+  trailBright: 0.7,
+  glow: 0.7,
+  focus: SUN,
+  fx: null,                 // focus transition { from, to, t, d0, d1 }
+  origin: new Float64Array(3),
+  recording: false,
+};
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function focusDistance(b) {
+  const portrait = Math.max(1, 0.85 / (view.w / view.h));   // narrow screens need more distance for the same width
+  if (b.isSun) return 16 * portrait;
+  return Math.max(b.radius * 70, b.system * 3.2, 1.5e-4) * portrait;
+}
+function setFocus(i, instant = false) {
+  const d = camera.position.length();
+  state.fx = instant || REDUCED ? null : { from: state.focus, to: i, t: 0, d0: d, d1: i === state.focus ? d : focusDistance(bodies[i]) };
+  if (instant || REDUCED) camera.position.setLength(focusDistance(bodies[i]));
+  state.focus = i;
+  controls.minDistance = Math.max(bodies[i].radius * 1.6, 1e-7);
+  const b = bodies[i];
+  $('focusline').querySelector('i').style.background = b.color;
+  $('focusline').querySelector('i').style.boxShadow = `0 0 10px ${b.color}`;
+  $('focusline').querySelector('span').textContent = `Focus: ${b.label}${b.isSun ? '' : '  ·  period ' + fmtPeriod(b.period)}`;
+  for (const el of document.querySelectorAll('.body-row')) el.setAttribute('aria-pressed', String(+el.dataset.i === i));
+  try { history.replaceState(null, '', i === SUN ? location.pathname + location.search : '#' + b.slug); } catch {}
+}
+
+// ─── Per-frame update ────────────────────────────────────────────────────────
+
+const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const vtmp = new THREE.Vector3();
+const view = { w: 1, h: 1, pr: 1, s: 1 };   // logical size, pixel ratio, UI scale
+
+function advance(dt) {
+  if (state.playing) {
+    state.f += SPEEDS[state.speedIdx] * DAY / D.frameDt * dt;
+    if (state.f > F - 1) state.f = 0;
+  }
+  if (state.fx) {
+    state.fx.t = Math.min(1, state.fx.t + dt / 1.6);
+    if (state.fx.t >= 1) state.fx = null;
+  }
+  controls.autoRotate = state.orbit;
+  controls.update(dt);
+}
+
+function updateScene() {
+  const f = state.f;
+  for (const b of bodies) posAt(b.i, f, b.cur);
+
+  // Floating origin: the followed body sits at (0,0,0), which keeps float32 precision near it.
+  const o = state.origin, tgt = bodies[state.focus].cur;
+  if (state.fx) {
+    const e = ease(state.fx.t), src = bodies[state.fx.from].cur;
+    for (let d = 0; d < 3; d++) o[d] = src[d] + (tgt[d] - src[d]) * e;
+    camera.position.setLength(Math.exp(Math.log(state.fx.d0) + (Math.log(state.fx.d1) - Math.log(state.fx.d0)) * e));
+  } else o.set(tgt);
+
+  for (const b of bodies) b.rel.set(b.cur[0] - o[0], b.cur[1] - o[1], b.cur[2] - o[2]);
+  sunLight.position.copy(bodies[SUN].rel);
+  grid.position.copy(bodies[SUN].rel);
+  grid.visible = state.grid;
+  stars.position.copy(camera.position);
+  stars.material.uniforms.scale.value = view.pr * view.s;
+  camera.updateMatrixWorld();
+
+  // Screen positions (logical px) and dot appearance.
+  const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const dg = dots.geometry, dp = dg.attributes.position.array, ds = dg.attributes.size.array, da = dg.attributes.alpha.array;
+  for (const b of bodies) {
+    const sc = b.screen;
+    vtmp.copy(b.rel).project(camera);
+    sc.vis = vtmp.z < 1 && Math.abs(vtmp.x) < 1.2 && Math.abs(vtmp.y) < 1.2;
+    sc.x = (vtmp.x + 1) / 2 * view.w; sc.y = (1 - vtmp.y) / 2 * view.h;
+    const dist = b.rel.distanceTo(camera.position);
+    sc.r = b.radius / dist / tanHalf * view.h / 2;
+    let alpha = 1;
+    if (b.isMoon) {
+      if (!state.moons) alpha = 0;
+      else {
+        const p = bodies[b.parent].screen;
+        alpha *= THREE.MathUtils.smoothstep(Math.hypot(sc.x - p.x, sc.y - p.y), 3 * view.s, 14 * view.s);
+      }
+    }
+    sc.alpha = alpha;
+    const base = (b.isSun ? 26 : b.isMoon ? 6 : 10) * view.s;
+    const sphereFade = b.isSun ? 1 : 1 - THREE.MathUtils.smoothstep(sc.r, 2.5 * view.s, 9 * view.s);
+    ds[b.i] = (b.isSun ? Math.max(base, sc.r * 7) : Math.max(base, sc.r * 3.2)) * view.pr;
+    da[b.i] = alpha * (b.isSun ? 1 : 0.25 + 0.75 * sphereFade);
+    b.rel.toArray(dp, b.i * 3);
+    b.mesh.position.copy(b.rel);
+    b.mesh.visible = alpha > 0.01;
+  }
+  dg.attributes.position.needsUpdate = true; dg.attributes.size.needsUpdate = true; dg.attributes.alpha.needsUpdate = true;
+
+  // Trails.
+  const a = new Float64Array(3), p = new Float64Array(3);
+  for (const b of bodies) {
+    if (!b.trail) continue;
+    if (b.ringLine) {
+      b.ringLine.visible = state.moons && state.trails;
+      b.ringLine.position.copy(bodies[b.parent].rel);
+    }
+    const line = b.trail, ud = line.userData;
+    const L = Math.min(f, b.period * state.trailLen);
+    if (!state.trails || b.ringOnly || (b.isMoon && !state.moons) || L < 1) { line.visible = false; continue; }
+    line.visible = true;
+    // Sample on a fixed grid of times (so points don't crawl), coarser than a frame for long
+    // trails and finer than a frame (interpolated) for short orbits like the Moon's.
+    let h = L / (ud.max - 1);
+    h = h >= 1 ? Math.ceil(h) : 1 / Math.floor(1 / h);
+    const get = h >= 1 ? (k, i, out) => sample(k, i, out) : (t, i, out) => posAt(i, t, out);
+    const par = b.isMoon ? bodies[b.parent] : null;
+    const px = [];
+    for (let k = Math.max(0, Math.ceil((f - L) / h)); k * h < f; k++) {
+      const t = k * h;
+      get(t, b.i, a);
+      if (par) { get(t, par.i, p); a[0] += par.cur[0] - p[0]; a[1] += par.cur[1] - p[1]; a[2] += par.cur[2] - p[2]; }
+      px.push(a[0] - o[0], a[1] - o[1], a[2] - o[2]);
+    }
+    px.push(b.rel.x, b.rel.y, b.rel.z);
+    const segs = Math.min(px.length / 3 - 1, ud.max);
+    const bright = (b.isMoon ? 0.75 : 1) * state.trailBright;
+    const cr = b.col.r * bright, cg = b.col.g * bright, cb = b.col.b * bright;
+    for (let s = 0; s < segs; s++) {
+      for (let d = 0; d < 3; d++) { ud.pos[s * 6 + d] = px[s * 3 + d]; ud.pos[s * 6 + 3 + d] = px[(s + 1) * 3 + d]; }
+      const t0 = Math.pow(s / segs, 1.7), t1 = Math.pow((s + 1) / segs, 1.7);
+      ud.col[s * 6] = cr * t0; ud.col[s * 6 + 1] = cg * t0; ud.col[s * 6 + 2] = cb * t0;
+      ud.col[s * 6 + 3] = cr * t1; ud.col[s * 6 + 4] = cg * t1; ud.col[s * 6 + 5] = cb * t1;
+    }
+    line.geometry.instanceCount = segs;
+    ud.pb.needsUpdate = true; ud.cb.needsUpdate = true;
+  }
+}
+
+// ─── 2D overlay: labels, grid radii, scale bar, (in videos) the HUD ──────────
+
+const overlay = $('overlay');
+const octx = overlay.getContext('2d');
+const FONT_DATA = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
+const FONT_BODY = '"IBM Plex Sans", system-ui, sans-serif';
+const FONT_DISPLAY = '"Instrument Serif", Georgia, serif';
+
+function niceScale(maxAu) {
+  const e = Math.pow(10, Math.floor(Math.log10(maxAu)));
+  for (const m of [5, 2, 1]) if (m * e <= maxAu) return m * e;
+  return e;
+}
+
+function drawOverlay(ctx, W, H, s, hud) {
+  ctx.textBaseline = 'middle';
+  const placed = [];
+
+  if (state.labels) {
+    if (state.grid) {
+      ctx.font = `${10 * s}px ${FONT_DATA}`;
+      ctx.fillStyle = 'rgba(124,147,196,0.45)';
+      for (const r of GRID_R) {
+        vtmp.set(r, 0, 0).add(bodies[SUN].rel).project(camera);
+        if (vtmp.z >= 1 || Math.abs(vtmp.x) > 1 || Math.abs(vtmp.y) > 1) continue;
+        const x = (vtmp.x + 1) / 2 * W, y = (1 - vtmp.y) / 2 * H;
+        const cx = bodies[SUN].screen.x * W / view.w;
+        if (Math.abs(x - cx) < 40 * s) continue;
+        ctx.fillText(`${r} AU`, x + 4 * s, y - 7 * s);
+      }
+    }
+    const order = [...bodies].sort((a, b) => (a.isMoon - b.isMoon) || (b.mass - a.mass));
+    for (const b of order) {
+      const sc = b.screen;
+      if (!sc.vis || sc.alpha < 0.5) continue;
+      const x = sc.x * W / view.w, y = sc.y * H / view.h;
+      const off = Math.max(sc.r * (W / view.w) * (b.isSun ? 1.2 : 1), (b.isSun ? 12 : 6) * s) + 6 * s;
+      const size = (b.isMoon ? 10.5 : 12.5) * s;
+      ctx.font = `${b.isMoon ? 400 : 500} ${size}px ${FONT_BODY}`;
+      const w = ctx.measureText(b.label).width;
+      const box = { x0: x + off, x1: x + off + w, y0: y - size, y1: y + size };
+      if (placed.some((q) => box.x0 < q.x1 && box.x1 > q.x0 && box.y0 < q.y1 && box.y1 > q.y0)) continue;
+      placed.push(box);
+      ctx.fillStyle = b.i === state.focus ? '#f4b54f' : b.isMoon ? 'rgba(200,208,225,0.62)' : 'rgba(227,232,242,0.9)';
+      ctx.fillText(b.label, box.x0, y);
+    }
+  }
+
+  // Scale bar at the distance of the followed body.
+  const dist = camera.position.length();
+  const auPerPx = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / H;
+  const maxAu = auPerPx * 150 * s;
+  const au = maxAu >= 0.1 ? niceScale(maxAu) : niceScale(maxAu * AU_KM) / AU_KM;
+  const len = au / auPerPx;
+  const sx = 22 * s, sy = H - (hud ? 40 : 108) * s;
+  ctx.strokeStyle = 'rgba(227,232,242,0.7)';
+  ctx.lineWidth = Math.max(1, s);
+  ctx.beginPath();
+  ctx.moveTo(sx, sy - 4 * s); ctx.lineTo(sx, sy); ctx.lineTo(sx + len, sy); ctx.lineTo(sx + len, sy - 4 * s);
+  ctx.stroke();
+  ctx.font = `${10.5 * s}px ${FONT_DATA}`;
+  ctx.fillStyle = 'rgba(227,232,242,0.75)';
+  ctx.fillText(fmtDistance(au), sx, sy - 13 * s);
+
+  if (!hud) return;
+  const c = clock(state.f);
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `500 ${10.5 * s}px ${FONT_DATA}`;
+  ctx.fillStyle = 'rgba(128,137,160,1)';
+  ctx.letterSpacing = `${1.5 * s}px`;
+  ctx.fillText('SOLAR SYSTEM · N-BODY SIMULATION', 26 * s, 38 * s);
+  ctx.letterSpacing = '0px';
+  ctx.font = `${50 * s}px ${FONT_DISPLAY}`;
+  ctx.fillStyle = '#e3e8f2';
+  ctx.fillText(c.dateText, 24 * s, 92 * s);
+  ctx.font = `${12 * s}px ${FONT_DATA}`;
+  ctx.fillStyle = 'rgba(128,137,160,1)';
+  ctx.fillText(c.sub, 26 * s, 116 * s);
+  ctx.textAlign = 'right';
+  ctx.fillText(`${D.integrator} · Δt ${nf0.format(D.dt / 60)} min · ${N} bodies`, W - 24 * s, H - 30 * s);
+  ctx.textAlign = 'left';
+}
+
+// ─── Render loop ─────────────────────────────────────────────────────────────
+
+function resize() {
+  if (state.recording) return;
+  view.w = innerWidth; view.h = innerHeight; view.pr = Math.min(devicePixelRatio || 1, 2); view.s = 1;
+  renderer.setPixelRatio(view.pr);
+  renderer.setSize(view.w, view.h, false);
+  composer.setPixelRatio(view.pr);
+  composer.setSize(view.w, view.h);
+  bloom.resolution.set(view.w, view.h);
+  camera.aspect = view.w / view.h;
+  camera.updateProjectionMatrix();
+  for (const m of trailMats) m.resolution.set(view.w, view.h);
+  overlay.width = Math.round(view.w * view.pr); overlay.height = Math.round(view.h * view.pr);
+}
+addEventListener('resize', resize);
+
+function render() {
+  updateScene();
+  composer.render();
+}
+
+let last = performance.now(), uiTick = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (state.recording) return;
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  advance(dt);
+  render();
+  octx.setTransform(view.pr, 0, 0, view.pr, 0, 0);
+  octx.clearRect(0, 0, view.w, view.h);
+  drawOverlay(octx, view.w, view.h, 1, false);
+  if ((uiTick++ & 1) === 0) syncClock();
+}
+
+// ─── UI ──────────────────────────────────────────────────────────────────────
+
+const scrub = $('scrub');
+scrub.max = String(F - 1);
+function syncClock() {
+  const c = clock(state.f);
+  $('date').innerHTML = c.dateHtml;
+  $('subclock').textContent = c.sub;
+  if (document.activeElement !== scrub) scrub.value = String(state.f);
+  scrub.style.setProperty('--p', `${state.f / (F - 1) * 100}%`);
+}
+scrub.addEventListener('input', () => { state.f = +scrub.value; syncClock(); });
+
+function setPlaying(p) {
+  state.playing = p;
+  $('play-icon').setAttribute('d', p ? 'M4 2.5h3v11H4zM9 2.5h3v11H9z' : 'M4 2.5v11l9.5-5.5z');
+  $('play').setAttribute('aria-label', p ? 'Pause' : 'Play');
+}
+$('play').addEventListener('click', () => setPlaying(!state.playing));
+
+function speedLabel(d) {
+  if (d < 1) return `${nf0.format(d * 24)} hours`;
+  if (d < 365) return `${nf0.format(d)} ${d === 1 ? 'day' : 'days'}`;
+  const y = d / 365.25;
+  return `${y % 1 ? nf1.format(y) : nf0.format(y)} ${y === 1 ? 'year' : 'years'}`;
+}
+function setSpeed(i) {
+  state.speedIdx = Math.max(0, Math.min(SPEEDS.length - 1, i));
+  $('speed-val').innerHTML = `${speedLabel(SPEEDS[state.speedIdx])}<small>per second</small>`;
+  updateRecSummary();
+}
+$('slower').addEventListener('click', () => setSpeed(state.speedIdx - 1));
+$('faster').addEventListener('click', () => setSpeed(state.speedIdx + 1));
+
+// Timeline ticks: calendar decades with an epoch, otherwise elapsed years.
+{
+  const ticks = $('ticks');
+  const years = (F - 1) * D.frameDt / (365.25 * DAY);
+  const stepY = years > 60 ? 20 : years > 25 ? 10 : years > 8 ? 2 : years > 2 ? 1 : 0.25;
+  const startYear = hasEpoch ? new Date(epochMs + D.startT * 1000).getUTCFullYear() + (new Date(epochMs + D.startT * 1000).getUTCMonth()) / 12 : 0;
+  const first = hasEpoch ? Math.ceil(startYear / stepY) * stepY : stepY;
+  for (let y = first; ; y += stepY) {
+    const rel = hasEpoch ? y - startYear : y;
+    if (rel > years) break;
+    if (rel <= 0) continue;
+    const s = document.createElement('span');
+    s.style.left = `${rel / years * 100}%`;
+    s.textContent = hasEpoch ? String(Math.round(y * 100) / 100) : `${y} yr`;
+    ticks.appendChild(s);
+  }
+}
+
+// Body list.
+{
+  const list = $('bodies');
+  const add = (b) => {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'body-row' + (b.isMoon ? ' moon' : '') + (b.ringOnly ? ' ringonly' : '');
+    el.dataset.i = String(b.i);
+    el.setAttribute('aria-pressed', 'false');
+    el.title = b.ringOnly ? `${b.label} orbits ${bodies[b.parent].label} faster than the export's time resolution can show, so its orbit is drawn as a ring.` : `Follow ${b.label}`;
+    el.innerHTML = `<i class="swatch"></i><span class="name"></span><span class="meta"></span>`;
+    el.querySelector('.swatch').style.background = b.color;
+    el.querySelector('.name').textContent = b.label;
+    el.querySelector('.meta').textContent = b.isSun ? '' : fmtPeriod(b.period);
+    el.addEventListener('click', () => setFocus(b.i));
+    list.appendChild(el);
+  };
+  for (const b of bodies) {
+    if (b.isMoon) continue;
+    add(b);
+    for (const m of b.moons) add(bodies[m]);
+  }
+  const fast = bodies.filter((b) => b.ringOnly).map((b) => b.label);
+  if (fast.length) {
+    const note = $('alias-note');
+    const hrs = nf0.format(D.frameDt / 3600);
+    note.innerHTML = `◌ ${fast.join(', ')} orbit faster than the time resolution (${hrs} h per frame), so their orbits are drawn as rings. Export a shorter window, e.g. <code>--years 1</code>, to see them move.`;
+    note.hidden = false;
+  }
+}
+
+// Toggles.
+const bind = (id, key, after) => {
+  const el = $(id);
+  el.checked = state[key];
+  el.addEventListener('change', () => { state[key] = el.checked; after?.(); });
+};
+bind('opt-trails', 'trails');
+bind('opt-moons', 'moons', () => document.body.classList.toggle('no-moons', !state.moons));
+bind('opt-labels', 'labels');
+bind('opt-grid', 'grid');
+bind('opt-orbit', 'orbit');
+// Glow settings are remembered per browser.
+const pct = (v) => `${nf0.format(v * 100)} %`;
+function setTrailBright(v) { state.trailBright = v; $('opt-trail-bright').value = String(v); $('trail-bright-val').textContent = pct(v); }
+function setGlow(v) { state.glow = v; bloom.strength = v; bloom.enabled = v > 0; $('opt-glow').value = String(v); $('glow-val').textContent = pct(v); }
+function saveLook() { try { localStorage.setItem('nbody-look', JSON.stringify({ trailBright: state.trailBright, glow: state.glow })); } catch {} }
+try {
+  const look = JSON.parse(localStorage.getItem('nbody-look') || '{}');
+  if (Number.isFinite(look.trailBright)) setTrailBright(look.trailBright);
+  if (Number.isFinite(look.glow)) setGlow(look.glow);
+} catch {}
+$('opt-trail-bright').addEventListener('input', (e) => { setTrailBright(+e.target.value); saveLook(); });
+$('opt-glow').addEventListener('input', (e) => { setGlow(+e.target.value); saveLook(); });
+$('opt-trail-len').addEventListener('input', (e) => {
+  state.trailLen = +e.target.value;
+  $('trail-len-val').textContent = `${nf1.format(state.trailLen)} orbits`;
+});
+$('panel-toggle').addEventListener('click', () => {
+  const p = $('panel');
+  p.hidden = !p.hidden;
+  $('panel-toggle').setAttribute('aria-expanded', String(!p.hidden));
+});
+if (innerWidth <= 720) { $('panel').hidden = true; $('panel-toggle').setAttribute('aria-expanded', 'false'); }
+
+// Click a body on screen to follow it (ignores drags).
+{
+  let down = null;
+  canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener('pointerup', (e) => {
+    if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) { down = null; return; }
+    down = null;
+    let best = -1, bestD = 18;
+    for (const b of bodies) {
+      if (!b.screen.vis || b.screen.alpha < 0.5) continue;
+      const d = Math.hypot(b.screen.x - e.clientX, b.screen.y - e.clientY) - b.screen.r;
+      if (d < bestD) { bestD = d; best = b.i; }
+    }
+    if (best >= 0) setFocus(best);
+  });
+}
+
+function toast(msg, ms = 3200) {
+  const t = $('toast');
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { t.hidden = true; }, ms);
+}
+
+addEventListener('keydown', (e) => {
+  if (e.target.closest('input[type=number], form') && !e.target.matches('input[type=range]')) return;
+  if (state.recording || !$('scrim').hidden) { if (e.key === 'Escape' && !state.recording) closeRec(); return; }
+  if (e.key === ' ') { e.preventDefault(); setPlaying(!state.playing); }
+  else if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('ui-hidden');
+  else if (e.key === 'r' || e.key === 'R') openRec();
+  else if (e.key === 'Escape') setFocus(SUN);
+  else if (e.key === 'ArrowRight') state.f = Math.min(F - 1, state.f + 1);
+  else if (e.key === 'ArrowLeft') state.f = Math.max(0, state.f - 1);
+});
+
+// ─── Saving files ────────────────────────────────────────────────────────────
+
+async function saveFile(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  return true;
+}
+function stamp() {
+  const c = clock(state.f);
+  return (hasEpoch ? String(c.year) : `t${Math.round(simSeconds(state.f) / DAY)}d`) + '-' + bodies[state.focus].slug;
+}
+
+$('shot').addEventListener('click', async () => {
+  render();
+  const c = document.createElement('canvas');
+  c.width = renderer.domElement.width; c.height = renderer.domElement.height;
+  const x = c.getContext('2d');
+  x.drawImage(renderer.domElement, 0, 0);
+  x.setTransform(view.pr, 0, 0, view.pr, 0, 0);
+  drawOverlay(x, view.w, view.h, 1, true);
+  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+  if (await saveFile(blob, `solar-system-${stamp()}.png`)) toast('Image saved.');
+});
+
+// ─── Video recording (WebCodecs + mp4-muxer, frame-exact) ────────────────────
+
+const rec = { cancel: false, blob: null, name: '' };
+function recOpts() {
+  const [w, h] = document.querySelector('input[name=fmt]:checked').value.split('x').map(Number);
+  return { w, h, fps: +document.querySelector('input[name=fps]:checked').value, seconds: Math.max(1, Math.min(600, +$('dur').value || 20)), orbit: $('rec-orbit').checked, hud: $('rec-hud').checked };
+}
+function updateRecSummary() {
+  if (!$('rec-summary')) return;
+  const o = recOpts();
+  const simDays = SPEEDS[state.speedIdx] * o.seconds;
+  const frames = o.seconds * o.fps;
+  $('rec-summary').textContent = `${nf0.format(frames)} frames · ${o.seconds} s at ${speedLabel(SPEEDS[state.speedIdx])}/s = ${simDays >= 365.25 ? nf1.format(simDays / 365.25) + ' years' : nf0.format(simDays) + ' days'} simulated · focus ${bodies[state.focus].label}`;
+}
+function openRec() {
+  $('scrim').hidden = false;
+  $('rec-form').hidden = false;
+  $('rec-progress').hidden = true;
+  $('rec-error').hidden = true;
+  $('rec-orbit').checked = true;
+  updateRecSummary();
+  $('rec-start').focus();
+}
+function closeRec() { $('scrim').hidden = true; }
+$('rec-open').addEventListener('click', openRec);
+$('rec-cancel').addEventListener('click', closeRec);
+$('scrim').addEventListener('click', (e) => { if (e.target === $('scrim') && !state.recording) closeRec(); });
+$('dur-range').addEventListener('input', (e) => { $('dur').value = e.target.value; updateRecSummary(); });
+$('dur').addEventListener('input', (e) => { $('dur-range').value = e.target.value; updateRecSummary(); });
+for (const el of document.querySelectorAll('#rec-form input')) el.addEventListener('change', updateRecSummary);
+$('rec-abort').addEventListener('click', () => { if (state.recording) rec.cancel = true; else closeRec(); });
+$('rec-save').addEventListener('click', async () => {
+  if (rec.blob && await saveFile(rec.blob, rec.name)) { toast('Video saved.'); closeRec(); }
+});
+
+async function pickCodec(w, h, fps) {
+  const big = w * h > 1920 * 1088;
+  const bitrate = Math.round(w * h * fps * (big ? 0.09 : 0.14));
+  const tries = [
+    { codec: big ? 'avc1.640034' : 'avc1.64002a', mux: 'avc' },
+    { codec: big ? 'avc1.4d0034' : 'avc1.4d002a', mux: 'avc' },
+    { codec: 'vp09.00.51.08', mux: 'vp9' },
+    { codec: 'av01.0.12M.08', mux: 'av1' },
+  ];
+  for (const t of tries) {
+    const config = { codec: t.codec, width: w, height: h, bitrate, framerate: fps, latencyMode: 'quality' };
+    if (t.mux === 'avc') config.avc = { format: 'avc' };
+    try { if ((await VideoEncoder.isConfigSupported(config)).supported) return { config, mux: t.mux }; } catch {}
+  }
+  return null;
+}
+
+$('rec-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const o = recOpts();
+  const err = (msg) => { $('rec-error').textContent = msg; $('rec-error').hidden = false; };
+  if (!('VideoEncoder' in window)) return err('This browser cannot encode video (WebCodecs is missing). Use Chrome, Edge, Safari 17+ or Firefox 130+.');
+  const codec = await pickCodec(o.w, o.h, o.fps);
+  if (!codec) return err(`No video encoder is available for ${o.w} × ${o.h} at ${o.fps} fps. Try a smaller format or 30 fps.`);
+  let Mp4;
+  try { Mp4 = await import('https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs'); }
+  catch { return err('The MP4 muxer could not be loaded. Check your internet connection and try again.'); }
+
+  $('rec-form').hidden = true;
+  $('rec-progress').hidden = false;
+  $('rec-save').hidden = true;
+  $('rec-abort').textContent = 'Cancel';
+  $('rec-phase').textContent = `Recording · ${o.w} × ${o.h} · ${o.fps} fps`;
+  $('rec-title').textContent = 'Rendering frames …';
+  document.body.classList.add('recording');
+  state.recording = true;
+  rec.cancel = false; rec.blob = null;
+
+  const saved = { orbit: state.orbit, playing: state.playing };
+  state.orbit = o.orbit; state.playing = true;
+  view.w = o.w; view.h = o.h; view.pr = 1; view.s = o.h > o.w ? o.w / 1080 : o.h / 1080;
+  renderer.setPixelRatio(1);
+  renderer.setSize(o.w, o.h, false);
+  composer.setPixelRatio(1);
+  composer.setSize(o.w, o.h);
+  camera.aspect = o.w / o.h; camera.updateProjectionMatrix();
+  for (const m of trailMats) { m.resolution.set(o.w, o.h); m.linewidth *= view.s; }
+  const comp = document.createElement('canvas');
+  comp.width = o.w; comp.height = o.h;
+  const cctx = comp.getContext('2d');
+
+  const muxer = new Mp4.Muxer({ target: new Mp4.ArrayBufferTarget(), video: { codec: codec.mux, width: o.w, height: o.h, frameRate: o.fps }, fastStart: 'in-memory' });
+  let encErr = null;
+  const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (x) => { encErr = x; } });
+  enc.configure(codec.config);
+
+  const total = Math.round(o.seconds * o.fps);
+  const t0 = performance.now();
+  try {
+    for (let i = 0; i < total; i++) {
+      if (rec.cancel || encErr) break;
+      if (i > 0) advance(1 / o.fps);
+      render();
+      cctx.drawImage(renderer.domElement, 0, 0);
+      if (o.hud) drawOverlay(cctx, o.w, o.h, view.s, true);
+      const frame = new VideoFrame(comp, { timestamp: Math.round(i * 1e6 / o.fps), duration: Math.round(1e6 / o.fps) });
+      enc.encode(frame, { keyFrame: i % (o.fps * 2) === 0 });
+      frame.close();
+      while (enc.encodeQueueSize > 4) await new Promise((r) => setTimeout(r, 2));
+      if (i % 3 === 0 || i === total - 1) {
+        const el = (performance.now() - t0) / 1000, eta = el / (i + 1) * (total - i - 1);
+        $('rec-bar').style.width = `${(i + 1) / total * 100}%`;
+        $('rec-stats').textContent = `Frame ${nf0.format(i + 1)} / ${nf0.format(total)} · ${clock(state.f).dateText} · about ${Math.floor(eta / 60)}:${String(Math.round(eta % 60)).padStart(2, '0')} left`;
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+    if (!rec.cancel && !encErr) {
+      $('rec-title').textContent = 'Encoding video …';
+      await enc.flush();
+      muxer.finalize();
+      rec.blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+      rec.name = `solar-system-${stamp()}-${o.h}p${o.fps}.mp4`;
+    }
+  } catch (x) { encErr = x; }
+  try { enc.close(); } catch {}
+
+  for (const m of trailMats) m.linewidth /= view.s;
+  state.recording = false;
+  state.orbit = saved.orbit; state.playing = saved.playing;
+  document.body.classList.remove('recording');
+  resize();
+  last = performance.now();
+
+  if (encErr) {
+    $('rec-phase').textContent = 'Error';
+    $('rec-title').textContent = 'The recording failed.';
+    $('rec-stats').textContent = String(encErr.message || encErr);
+    $('rec-abort').textContent = 'Close';
+  } else if (rec.cancel) {
+    closeRec();
+    toast('Recording cancelled.');
+  } else {
+    $('rec-phase').textContent = 'Done';
+    $('rec-title').textContent = 'Your video is ready.';
+    $('rec-bar').style.width = '100%';
+    $('rec-stats').textContent = `${rec.name} · ${nf1.format(rec.blob.size / 1e6)} MB · ${o.seconds} s`;
+    $('rec-save').hidden = false;
+    $('rec-abort').textContent = 'Discard';
+    $('rec-save').focus();
+  }
+});
+
+// ─── Boot ────────────────────────────────────────────────────────────────────
+
+resize();
+setSpeed(state.speedIdx);
+setPlaying(!REDUCED);
+const fromHash = bodies.find((b) => '#' + b.slug === location.hash);
+setFocus(fromHash ? fromHash.i : SUN, true);
+if (!fromHash) camera.position.set(0, -11, 7.5).setLength(focusDistance(bodies[SUN]) * 0.83);
+$('boot').hidden = true;
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
