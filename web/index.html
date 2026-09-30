@@ -33,6 +33,7 @@
   "isBasedOn": "https://github.com/C0MaE/n-body-problem"
 }
 </script>
+<script defer src="https://analytics.tap.comae.dev/script.js" data-website-id="b67d15c5-c76b-4a31-a381-a02a98e562c1" data-domains="nbody.comae.dev"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
@@ -405,6 +406,8 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 const $ = (id) => document.getElementById(id);
+// Umami analytics event; a no-op when the tracker is blocked or not loaded.
+const track = (name, data) => { try { window.umami?.track(name, data); } catch {} };
 const D = window.NBODY_DATA;
 if (!D) {
   $('boot').textContent = 'data.js is missing. Run python export_web.py first.';
@@ -763,6 +766,7 @@ function setFocus(i, instant = false) {
   const d = camera.position.length();
   state.fx = instant || REDUCED ? null : { from: state.focus, to: i, t: 0, d0: d, d1: i === state.focus ? d : focusDistance(bodies[i]) };
   if (instant || REDUCED) camera.position.setLength(focusDistance(bodies[i]));
+  if (!instant && i !== state.focus) track('Focus body', { body: bodies[i].label });
   state.focus = i;
   controls.minDistance = Math.max(bodies[i].radius * 1.6, 1e-7);
   const b = bodies[i];
@@ -1176,7 +1180,7 @@ $('shot').addEventListener('click', async () => {
   x.setTransform(view.pr, 0, 0, view.pr, 0, 0);
   drawOverlay(x, view.w, view.h, 1, true);
   const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
-  if (await saveFile(blob, `solar-system-${stamp()}.png`)) toast('Image saved.');
+  if (await saveFile(blob, `solar-system-${stamp()}.png`)) { toast('Image saved.'); track('Save image', { body: bodies[state.focus].label }); }
 });
 
 // ─── Video recording (WebCodecs + mp4-muxer, frame-exact) ────────────────────
@@ -1211,7 +1215,7 @@ $('dur').addEventListener('input', (e) => { $('dur-range').value = e.target.valu
 for (const el of document.querySelectorAll('#rec-form input')) el.addEventListener('change', updateRecSummary);
 $('rec-abort').addEventListener('click', () => { if (state.recording) rec.cancel = true; else closeRec(); });
 $('rec-save').addEventListener('click', async () => {
-  if (rec.blob && await saveFile(rec.blob, rec.name)) { toast('Video saved.'); closeRec(); }
+  if (rec.blob && await saveFile(rec.blob, rec.name)) { toast('Video saved.'); track('Save video'); closeRec(); }
 });
 
 async function pickCodec(w, h, fps) {
@@ -1296,6 +1300,7 @@ $('rec-form').addEventListener('submit', async (e) => {
       muxer.finalize();
       rec.blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
       rec.name = `solar-system-${stamp()}-${o.h}p${o.fps}.mp4`;
+      track('Record video', { format: `${o.w}x${o.h}`, fps: o.fps, seconds: o.seconds, body: bodies[state.focus].label });
     }
   } catch (x) { encErr = x; }
   try { enc.close(); } catch {}
