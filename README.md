@@ -1,6 +1,6 @@
 # N-Body Problem — Solar System Simulation
 
-**[▶ Open the web viewer](https://c0mae.github.io/n-body-problem/)**
+**[▶ Open the web viewer](https://nbody.comae.dev/)**
 
 A numerical simulation of the solar system using the Velocity Verlet integrator. Bodies are configured in a single JSON file and results are rendered as an interactive animated plot.
 
@@ -68,7 +68,7 @@ python -m http.server --directory web 8000
 
 Then open <http://localhost:8000>. Opening `web/index.html` directly from disk works as well. The `web/` folder is a static site, so you can host it anywhere (GitHub Pages, Netlify, …) as long as `data.js` sits next to `index.html`.
 
-**Live version:** <https://c0mae.github.io/n-body-problem/>. Every push to `main` that touches `web/` redeploys it through `.github/workflows/pages.yml`. To publish a new run, re-export and commit `web/data.js`.
+**Live version:** <https://nbody.comae.dev/>. Every push to `main` that touches `web/` redeploys it through `.github/workflows/pages.yml`. To publish a new run, re-export and commit `web/data.js`.
 
 The export downsamples the run to at most 16 000 frames, puts the Sun at the origin and rotates everything into the invariable plane (total angular momentum along +z). Useful options:
 

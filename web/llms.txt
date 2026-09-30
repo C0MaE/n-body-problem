@@ -2,7 +2,7 @@
 
 > An interactive 3D web viewer for a Newtonian N-body simulation of the solar system. 17 bodies (the Sun, eight planets, Pluto and seven major moons) are integrated in C with the velocity Verlet method at a one-hour time step for 1,000,000 steps, about 114 years starting 2026-04-25. The viewer runs in any browser with WebGL and can export MP4 videos of the orbits.
 
-Live viewer: https://c0mae.github.io/n-body-problem/
+Live viewer: https://nbody.comae.dev/
 Source code: https://github.com/C0MaE/n-body-problem
 
 ## What the simulation computes

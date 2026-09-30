@@ -1,1 +1,1 @@
-https://c0mae.github.io/n-body-problem/
+https://nbody.comae.dev/
