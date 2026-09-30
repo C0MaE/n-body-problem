@@ -2,9 +2,6 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://c0mae.github.io/n-body-problem/</loc>
-    <changefreq>monthly</changefreq>
-  </url>
-  <url>
-    <loc>https://c0mae.github.io/n-body-problem/llms.txt</loc>
+    <lastmod>2026-09-30</lastmod>
   </url>
 </urlset>
