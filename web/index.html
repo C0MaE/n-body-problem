@@ -754,7 +754,8 @@ const state = {
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function focusDistance(b) {
-  const portrait = Math.max(1, 0.85 / (view.w / view.h));   // narrow screens need more distance for the same width
+  const aspect = view.w > 0 && view.h > 0 ? view.w / view.h : 16 / 9;   // a zero-size window (hidden frame) must not poison the camera
+  const portrait = Math.max(1, 0.85 / aspect);   // narrow screens need more distance for the same width
   if (b.isSun) return 16 * portrait;
   return Math.max(b.radius * 70, b.system * 3.2, 1.5e-4) * portrait;
 }
@@ -967,7 +968,7 @@ function drawOverlay(ctx, W, H, s, hud) {
 
 function resize() {
   if (state.recording) return;
-  view.w = innerWidth; view.h = innerHeight; view.pr = Math.min(devicePixelRatio || 1, 2); view.s = 1;
+  view.w = Math.max(1, innerWidth); view.h = Math.max(1, innerHeight); view.pr = Math.min(devicePixelRatio || 1, 2); view.s = 1;
   renderer.setPixelRatio(view.pr);
   renderer.setSize(view.w, view.h, false);
   composer.setPixelRatio(view.pr);
